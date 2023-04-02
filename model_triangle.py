@@ -5,15 +5,15 @@ from time import time
 import os
 from collections import OrderedDict
 
-from data import make_dataloader, make_dataloader_emnist
-from plot import artificial_data_reconstruction_plot, emnist_plot_samples, emnist_plot_spectrum, emnist_plot_variation_along_dims
+from data import make_dataloader, make_dataloader_triangle_2
+from plot import gaussian_plot, artificial_data_reconstruction_plot, triangle_plot_variation_along_dims, plot_scatter_along_dims
 
 import FrEIA.framework as Ff
 import FrEIA.modules as Fm
 
 
 class GIN(nn.Module):
-    def __init__(self, dataset, n_epochs, epochs_per_line, lr, lr_schedule, batch_size, save_frequency, incompressible_flow, empirical_vars, data_root_dir='./', n_classes=None, n_data_points=None, init_identity=True):
+    def __init__(self, dataset, n_epochs, epochs_per_line, lr, lr_schedule, batch_size, save_frequency, incompressible_flow, empirical_vars, data_root_dir='./', n_data_points=None, init_identity=True):
         super().__init__()
 
         self.dataset = dataset
@@ -27,76 +27,49 @@ class GIN(nn.Module):
         self.empirical_vars = bool(empirical_vars)
         self.init_identity = bool(init_identity)
 
-        self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
+        self.device = 'cuda: 3' if torch.cuda.is_available() else 'cpu'
         self.timestamp = str(int(time()))
 
-        if self.dataset == '10d':
-            self.net = construct_net_10d(
-                coupling_block='gin' if self.incompressible_flow else 'glow', init_identity=init_identity)
-            assert type(n_classes) is int
-            self.n_classes = n_classes
-            self.n_dims = 10
-            self.save_dir = os.path.join(
-                './artificial_data_save/', self.timestamp)
-            self.latent, self.data, self.target = generate_artificial_data_10d(
-                self.n_classes, n_data_points)
-            self.train_loader = make_dataloader(
-                self.data, self.target, self.batch_size)
-        elif self.dataset == 'EMNIST':
-            if not init_identity:
-                raise RuntimeError(
-                    'init_identity=False not implemented for EMNIST experiments')
-            self.net = construct_net_emnist(
-                coupling_block='gin' if self.incompressible_flow else 'glow')
-            self.n_classes = 10
-            self.n_dims = 28*28
-            self.save_dir = os.path.join('./emnist_save/', self.timestamp)
-            self.data_root_dir = data_root_dir
-            self.train_loader = make_dataloader_emnist(
-                batch_size=self.batch_size, train=True, root_dir=self.data_root_dir)
-            self.test_loader = make_dataloader_emnist(
-                batch_size=1000, train=False, root_dir=self.data_root_dir)
-        elif self.dataset == 'Triangle':
-            # todo
+        if self.dataset == 'triangle':
+            self.n_classes = 2
+            self.width = 32
+            self.n_dims = self.width * self.width
             self.net = construct_net_triangle(
                 coupling_block='gin' if self.incompressible_flow else 'glow')
-            self.n_classes = 10
-            self.n_dims = 28*28
-            self.save_dir = os.path.join('./emnist_save/', self.timestamp)
-            self.data_root_dir = data_root_dir
-            self.train_loader = make_dataloader_emnist(
-                batch_size=self.batch_size, train=True, root_dir=self.data_root_dir)
-            self.test_loader = make_dataloader_emnist(
-                batch_size=1000, train=False, root_dir=self.data_root_dir)
+            self.save_dir = os.path.join('/home/guanglinzhou/code/cgm/GIN/triangle_save/', self.timestamp)
+            self.train_loader = make_dataloader_triangle_2(
+                self.batch_size, train=True, root_dir='/home/guanglinzhou/code/cgm/GIN/triangle')
+            self.test_loader = make_dataloader_triangle_2(
+                100, train=False, root_dir='/home/guanglinzhou/code/cgm/GIN/triangle')
         else:
             raise RuntimeError("Check dataset name. Doesn't match.")
 
         if not empirical_vars:
             self.mu = nn.Parameter(torch.zeros(
-                self.n_classes, self.n_dims).to(self.device)).requires_grad_()
+                1, self.n_dims).to(self.device)).requires_grad_()
             self.log_sig = nn.Parameter(torch.zeros(
-                self.n_classes, self.n_dims).to(self.device)).requires_grad_()
+                1, self.n_dims).to(self.device)).requires_grad_()
             # initialize these parameters to reasonable values
             self.set_mu_sig(init=True)
 
         self.to(self.device)
 
     def forward(self, x, rev=False):
-        # generative process with rev=False, z -> x
-        x, logdet_J = self.net(x, rev=rev)
-        return x, logdet_J
+        x = self.net(x, rev=rev)
+        return x
 
     def train_model(self):
         os.makedirs(self.save_dir)
         with open(os.path.join(self.save_dir, 'log.txt'), 'w') as f:
+            f.write(f'batch size {self.batch_size}\n')
             f.write(f'incompressible_flow {self.incompressible_flow}\n')
             f.write(f'empirical_vars {self.empirical_vars}\n')
             f.write(f'init_identity {self.init_identity}\n')
         os.makedirs(os.path.join(self.save_dir, 'model_save'))
         os.makedirs(os.path.join(self.save_dir, 'figures'))
         print(f'\nTraining model for {self.n_epochs} epochs \n')
-        self.train()
         self.to(self.device)
+        self.net.train()
         print('  time     epoch    iteration         loss       last checkpoint')
         optimizer = torch.optim.Adam(self.parameters(), self.lr)
         sched = torch.optim.lr_scheduler.MultiStepLR(
@@ -106,6 +79,7 @@ class GIN(nn.Module):
         for epoch in range(self.n_epochs):
             self.epoch = epoch
             for batch_idx, (data, target) in enumerate(self.train_loader):
+                #target = target[:, 0].int()
                 if self.empirical_vars:
                     # first check that std will be well defined
                     if min([sum(target == i).item() for i in range(self.n_classes)]) < 2:
@@ -115,25 +89,29 @@ class GIN(nn.Module):
                 optimizer.zero_grad()
                 data += torch.randn_like(data)*1e-2
                 data = data.to(self.device)
+                # logdet_j is 0
                 z, logdet_J = self.net(data)          # latent space variable
-                # check all values in logdet_j are 0
-                assert torch.all(logdet_J == 0), "log of Jacobian determinant must be zero"
+                #logdet_J = self.net.log_jacobian(run_forward=False)
                 if self.empirical_vars:
                     # we only need to calculate the std
+                    #sig = torch.stack([z.std(0, unbiased=False)])
+                    #sig_total = torch.stack([z.std(0, unbiased=False)])
+                    # print('target.shape: {}, dtype of target: {}'.format( target.shape, target.dtype))
+                    target = target.to(torch.long)
+                    # print('target.shape: {}, dtype of target: {}'.format( target.shape, target.dtype))
+                    mu = torch.stack([z[target == i].mean(0) for i in range(self.n_classes)])
                     sig = torch.stack(
                         [z[target == i].std(0, unbiased=False) for i in range(self.n_classes)])
                     # negative log-likelihood for gaussian in latent space
-                    loss = 0.5 + sig[target].log().mean(1) + \
-                        0.5*np.log(2*np.pi)
+                    # + 0.1 * ((mu[0] - mu[1])**2).sum() + 0.5*np.log(2*np.pi)
+                    loss = 0.5 + sig.log().mean()
                 else:
                     m = self.mu[target]
                     ls = self.log_sig[target]
                     # negative log-likelihood for gaussian in latent space
                     loss = torch.mean(
                         0.5*(z-m)**2 * torch.exp(-2*ls) + ls, 1) + 0.5*np.log(2*np.pi)
-                # with open(os.path.join(self.save_dir, 'log.txt'), 'a') as f:
-                #     f.write(f'logdet_J: {logdet_J}\n')
-                loss -= logdet_J / self.n_dims
+                #loss -= logdet_J / self.n_dims
                 loss = loss.mean()
                 self.print_loss(loss.item(), batch_idx, epoch, t0)
                 losses.append(loss.item())
@@ -170,21 +148,32 @@ class GIN(nn.Module):
         self.load_state_dict(data['model'])
 
     def make_plots(self):
-        if self.dataset == '10d':
-            artificial_data_reconstruction_plot(
-                self, self.latent, self.data, self.target)
-        elif self.dataset == 'EMNIST':
+        if self.dataset == 'triangle':
             os.makedirs(os.path.join(self.save_dir, 'figures',
                         f'epoch_{self.epoch+1:03d}'))
             self.set_mu_sig()
             sig_rms = np.sqrt(
                 np.mean((self.sig**2).detach().cpu().numpy(), axis=0))
-            emnist_plot_samples(self, n_rows=20)
-            emnist_plot_spectrum(self, sig_rms)
-            n_dims_to_plot = 40
+            #emnist_plot_samples(self, n_rows=1)
+            #emnist_plot_spectrum(self, sig_rms)
+            n_dims_to_plot = 10
             top_sig_dims = np.flip(np.argsort(sig_rms))
             dims_to_plot = top_sig_dims[:n_dims_to_plot]
-            emnist_plot_variation_along_dims(self, dims_to_plot)
+            triangle_plot_variation_along_dims(self, dims_to_plot)
+
+            examples = iter(self.test_loader)
+            latent = []
+            target = []
+            for _ in range(40):
+                data, targ = next(examples)
+                self.to(self.device)
+                self.eval()
+                # latent.append(self(data.to(self.device)).detach().cpu())
+                latent.append(data)
+                target.append(targ)
+            latent = torch.cat(latent[:40], 0)
+            target = torch.cat(target[:40], 0)
+            plot_scatter_along_dims(self, latent, target, dims_to_plot)
         else:
             raise RuntimeError("Check dataset name. Doesn't match.")
 
@@ -196,63 +185,35 @@ class GIN(nn.Module):
             target = []
             for _ in range(n_batches):
                 data, targ = next(examples)
-                data += torch.randn_like(data)*1e-2
-                self.eval()
-                latent.append((self(data.to(self.device))[0]).detach().cpu())
+                #data = data[targ==self.cond]
+                #data += torch.randn_like(data)*1e-2
+                # self.to(self.device)
+                # self.eval()
+                # latent.append(self(data.to(self.device)).detach().cpu())
+                latent.append(data)
                 target.append(targ)
-            latent = torch.cat(latent, 0)
-            target = torch.cat(target, 0)
+            latent = torch.cat(latent[:n_batches], 0)
+            target = torch.cat(target[:n_batches], 0)
         if self.empirical_vars:
             self.mu = torch.stack([latent[target == i].mean(0)
-                                  for i in range(10)]).to(self.device)
+                                  for i in range(self.n_classes)]).to(self.device)
             self.sig = torch.stack([latent[target == i].std(0)
-                                   for i in range(10)]).to(self.device)
+                                   for i in range(self.n_classes)]).to(self.device)
         else:
             if init:
                 self.mu.data = torch.stack(
-                    [latent[target == i].mean(0) for i in range(10)])
+                    [latent[target == i].mean(0) for i in range(self.n_classes)])
                 self.log_sig.data = torch.stack(
-                    [latent[target == i].std(0) for i in range(10)]).log()
+                    [latent[target == i].std(0) for i in range(self.n_classes)]).log()
             else:
                 self.sig = self.log_sig.exp().detach()
 
 
-def subnet_fc_10d(c_in, c_out, init_identity):
-    subnet = nn.Sequential(nn.Linear(c_in, 10), nn.ReLU(),
-                           nn.Linear(10, 10), nn.ReLU(),
-                           nn.Linear(10,  c_out))
-    if init_identity:
-        subnet[-1].weight.data.fill_(0.)
-        subnet[-1].bias.data.fill_(0.)
-    return subnet
-
-
-def construct_net_10d(coupling_block, init_identity=True):
-    if coupling_block == 'gin':
-        block = Fm.GINCouplingBlock
-    else:
-        assert coupling_block == 'glow'
-        block = Fm.GLOWCouplingBlock
-
-    nodes = [Ff.InputNode(10, name='input')]
-
-    for k in range(8):
-        nodes.append(Ff.Node(nodes[-1], block,
-                             {'subnet_constructor': lambda c_in, c_out: subnet_fc_10d(
-                                 c_in, c_out, init_identity), 'clamp': 2.0},
-                             name=F'coupling_{k}'))
-        nodes.append(Ff.Node(nodes[-1], Fm.PermuteRandom,
-                             {'seed': np.random.randint(2**31)},
-                             name=F'permute_{k+1}'))
-
-    nodes.append(Ff.OutputNode(nodes[-1], name='output'))
-    return Ff.ReversibleGraphNet(nodes)
-
-
 def subnet_fc(c_in, c_out):
-    width = 392
-    subnet = nn.Sequential(nn.Linear(c_in, width), nn.ReLU(),
-                           nn.Linear(width, width), nn.ReLU(),
+    width = 512
+    act = nn.ReLU()
+    subnet = nn.Sequential(nn.Linear(c_in, width), act,
+                           nn.Linear(width, width), act,
                            nn.Linear(width,  c_out))
     for l in subnet:
         if isinstance(l, nn.Linear):
@@ -264,8 +225,9 @@ def subnet_fc(c_in, c_out):
 
 def subnet_conv1(c_in, c_out):
     width = 16
-    subnet = nn.Sequential(nn.Conv2d(c_in, width, 3, padding=1), nn.ReLU(),
-                           nn.Conv2d(width, width, 3, padding=1), nn.ReLU(),
+    act = nn.ReLU()
+    subnet = nn.Sequential(nn.Conv2d(c_in, width, 3, padding=1), act,
+                           nn.Conv2d(width, width, 3, padding=1), act,
                            nn.Conv2d(width, c_out, 3, padding=1))
     for l in subnet:
         if isinstance(l, nn.Conv2d):
@@ -277,8 +239,9 @@ def subnet_conv1(c_in, c_out):
 
 def subnet_conv2(c_in, c_out):
     width = 32
-    subnet = nn.Sequential(nn.Conv2d(c_in, width, 3, padding=1), nn.ReLU(),
-                           nn.Conv2d(width, width, 3, padding=1), nn.ReLU(),
+    act = nn.ReLU()
+    subnet = nn.Sequential(nn.Conv2d(c_in, width, 3, padding=1), act,
+                           nn.Conv2d(width, width, 3, padding=1), act,
                            nn.Conv2d(width, c_out, 3, padding=1))
     for l in subnet:
         if isinstance(l, nn.Conv2d):
@@ -288,14 +251,14 @@ def subnet_conv2(c_in, c_out):
     return subnet
 
 
-def construct_net_emnist(coupling_block):
+def construct_net_triangle(coupling_block):
     if coupling_block == 'gin':
         block = Fm.GINCouplingBlock
     else:
         assert coupling_block == 'glow'
         block = Fm.GLOWCouplingBlock
 
-    nodes = [Ff.InputNode(1, 28, 28, name='input')]
+    nodes = [Ff.InputNode(1, 32, 32, name='input')]
     nodes.append(
         Ff.Node(nodes[-1], Fm.IRevNetDownsampling, {}, name='downsample1'))
 
@@ -333,24 +296,3 @@ def construct_net_emnist(coupling_block):
 
     nodes.append(Ff.OutputNode(nodes[-1], name='output'))
     return Ff.ReversibleGraphNet(nodes)
-
-
-def construct_net_triangle(coupling_block):
-    # todo
-    pass
-
-
-# function is here rather than in data.py to prevent circular import
-def generate_artificial_data_10d(n_clusters, n_data_points):
-    latent_means = torch.rand(n_clusters, 2)*10 - 5         # in range (-5, 5)
-    latent_stds = torch.rand(n_clusters, 2)*2.5 + 0.5      # in range (0.5, 3)
-
-    labels = torch.randint(n_clusters, size=(n_data_points,))
-    latent = latent_means[labels] + \
-        torch.randn(n_data_points, 2)*latent_stds[labels]
-    latent = torch.cat([latent, torch.randn(n_data_points, 8)*1e-2], 1)
-
-    random_transf = construct_net_10d('glow', init_identity=False)
-    data = random_transf(latent)[0].detach()
-
-    return latent, data, labels

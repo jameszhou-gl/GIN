@@ -5,3 +5,5 @@ artificial_data_save
 emnist_save
 triangle
 triangle_save
+domain_adaptation_data_save
+domain_adaptation_synthetic_save

@@ -67,6 +67,68 @@ def artificial_data_reconstruction_plot(model, latent, data, target):
                 plt.close()
 
 
+def da_synthetic_data_reconstruction_plot(model, latent, data, target, epoch):
+    """
+    This function plots 8 figures of a reconstructed latent space, each for a different orientation of the 
+    reconstructed latent space.
+    """
+    model.eval()
+    model.cpu()
+    z_reconstructed = (model(data)[0]).detach()
+    sig = torch.stack([z_reconstructed[target == i].std(
+        0, unbiased=False) for i in range(model.n_domains)])
+    rms_sig = np.sqrt(np.mean(sig.numpy()**2, 0))
+    latent_sig = torch.stack([latent[target == i].std(
+        0, unbiased=False) for i in range(model.n_domains)])
+    latent_rms_sig = np.sqrt(np.mean(latent_sig.numpy()**2, 0))
+
+    for dim_order in range(2):
+        for dim1_factor in [1, -1]:
+            for dim2_factor in [1, -1]:
+                fig = plt.figure(figsize=(12, 3.5))
+
+                plt.subplot(1, 4, 1)
+                plt.scatter(latent[:, 0], latent[:, model.dim_c],
+                            c=target, s=6, alpha=0.3)
+                plt.xticks([])
+                plt.yticks([])
+                plt.title('GROUND TRUTH', fontsize=16, family='serif')
+
+                plt.subplot(1, 4, 2)
+                plt.scatter(data[:, 0], data[:, 1], c=target, s=6, alpha=0.3)
+                plt.xticks([])
+                plt.yticks([])
+                plt.title('OBSERVED DATA\n(PROJECTION)',
+                          fontsize=16, family='serif')
+
+                plt.subplot(1, 4, 3)
+                dim1 = np.flip(np.argsort(rms_sig))[dim_order]
+                dim2 = np.flip(np.argsort(rms_sig))[(1+dim_order) % 2]
+                dim_c_start = 0
+                dim_s_start = np.flip(np.argsort(rms_sig))[model.dim_c]
+                plt.scatter(
+                    dim1_factor*z_reconstructed[:, dim_s_start], dim2_factor*z_reconstructed[:, dim_c_start], c=target, s=6, alpha=0.3)
+                plt.xticks([])
+                plt.yticks([])
+                plt.title('RECONSTRUCTION', fontsize=16, family='serif')
+
+                plt.subplot(1, 4, 4)
+                plt.semilogy(np.flip(np.sort(rms_sig)), '-ok')
+                ground_truth = np.flip(np.sort(latent_rms_sig))
+                ground_truth = latent_rms_sig
+                plt.semilogy(scale_ground_truth(
+                    ground_truth, rms_sig), '-ok', alpha=0.3)
+                plt.xticks([])
+                plt.yticks([])
+                plt.title('SPECTRUM', fontsize=16, family='serif')
+
+                plt.tight_layout()
+                fig_idx = 4*dim_order + 2 * \
+                    max(dim1_factor, 0) + max(dim2_factor, 0)
+                plt.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_{}.png'.format(epoch, fig_idx)))
+                plt.close()
+
+
 def scale_ground_truth(y, x):
     logy = (np.log(y)-np.min(np.log(y))) * \
         (np.max(np.log(x))-np.min(np.log(x)))

@@ -2,6 +2,7 @@ import torch
 import torch.nn as nn
 import numpy as np
 from time import time
+import datetime
 import os
 from collections import OrderedDict
 
@@ -33,8 +34,9 @@ class GIN(nn.Module):
 
         self.device = 'cuda' if torch.cuda.is_available() else 'cpu'
         self.timestamp = str(int(time()))
+        now = datetime.datetime.now()
         self.save_dir = os.path.join(
-            './domain_adaptation_{}_save/'.format(self.dataset), self.timestamp)
+            './domain_adaptation_{}_save/'.format(self.dataset), now.strftime("%Y-%m%d-%H-%M-%S"))
 
         if self.dataset == 'synthetic':
             os.makedirs(self.save_dir)
@@ -47,7 +49,12 @@ class GIN(nn.Module):
                 coupling_block='gin' if self.incompressible_flow else 'glow', n_dims=self.n_dims, init_identity=args.init_identity)
             assert type(args.n_domains) is int
             self.n_domains = args.n_domains
+            self.log_file = open(os.path.join(self.save_dir, 'log.txt'), 'a')
+            self.log_file.write(str(args)+'\n')
+            
             if args.load_existing_dataset:
+                print('\n load files from {}\n'.format(args.load_existing_dataset))
+                self.log_file.write('\n load files from {}\n'.format(args.load_existing_dataset))
                 self.latent = torch.load(os.path.join(
                     args.load_existing_dataset, 'latent.pt'))
                 self.data = torch.load(os.path.join(
@@ -61,8 +68,7 @@ class GIN(nn.Module):
                 self.data, self.target, self.batch_size)
 
 
-            self.log_file = open(os.path.join(self.save_dir, 'log.txt'), 'a')
-            self.log_file.write(str(args)+'\n')
+
         else:
             raise RuntimeError("Check dataset name. Doesn't match.")
 

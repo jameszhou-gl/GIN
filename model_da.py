@@ -37,17 +37,30 @@ class GIN(nn.Module):
             './domain_adaptation_{}_save/'.format(self.dataset), self.timestamp)
 
         if self.dataset == 'synthetic':
+            os.makedirs(self.save_dir)
+            os.makedirs(os.path.join(self.save_dir, 'model_save'))
+            os.makedirs(os.path.join(self.save_dir, 'figures'))
+            data_dir = os.path.join(self.save_dir, 'data')
+            os.makedirs(data_dir)
             self.n_dims = 10
             self.net = construct_net_da(
                 coupling_block='gin' if self.incompressible_flow else 'glow', n_dims=self.n_dims, init_identity=args.init_identity)
             assert type(args.n_domains) is int
             self.n_domains = args.n_domains
-            self.latent, self.data, self.target = generate_artificial_data_domain_adaptation(
-                n_domains=self.n_domains, n_data_points=args.n_data_points, n_dims=self.n_dims, dim_s=self.dim_s, dim_c=self.dim_c)
+            if args.load_existing_dataset:
+                self.latent = torch.load(os.path.join(
+                    args.load_existing_dataset, 'latent.pt'))
+                self.data = torch.load(os.path.join(
+                    args.load_existing_dataset, 'data.pt'))
+                self.target = torch.load(os.path.join(
+                    args.load_existing_dataset, 'labels.pt'))
+            else:
+                self.latent, self.data, self.target = generate_artificial_data_domain_adaptation(
+                    n_domains=self.n_domains, n_data_points=args.n_data_points, n_dims=self.n_dims, dim_s=self.dim_s, dim_c=self.dim_c, data_dir = data_dir)
             self.train_loader = make_dataloader(
                 self.data, self.target, self.batch_size)
 
-            os.makedirs(self.save_dir)
+
             self.log_file = open(os.path.join(self.save_dir, 'log.txt'), 'a')
             self.log_file.write(str(args)+'\n')
         else:
@@ -74,8 +87,6 @@ class GIN(nn.Module):
             f'incompressible_flow {self.incompressible_flow}\n')
         self.log_file.write(f'empirical_vars {self.empirical_vars}\n')
         self.log_file.write(f'init_identity {self.init_identity}\n')
-        os.makedirs(os.path.join(self.save_dir, 'model_save'))
-        os.makedirs(os.path.join(self.save_dir, 'figures'))
         print(f'\nTraining model for {self.n_epochs} epochs \n')
         self.log_file.write(f'\nTraining model for {self.n_epochs} epochs \n')
 
@@ -184,7 +195,7 @@ class GIN(nn.Module):
             0, unbiased=False) for i in range(self.n_domains)])
         rms_sig = np.sqrt(np.mean(sig.detach().numpy()**2, 0))
         dim_z_c = np.flip(np.argsort(rms_sig))[:self.dim_c]
-        
+
         z_rec = torch.cat([z_rec[self.target == i]
                           for i in range(self.n_domains)])
         z_c = z_rec[:, dim_z_c.copy()]
@@ -192,8 +203,9 @@ class GIN(nn.Module):
                            for i in range(self.n_domains)])
         latent_c = latent[:, self.dim_s: self.dim_s+self.dim_c]
         
+        return mean_corr_coef_np(z_c.detach().numpy(), latent_c.detach().numpy())
 
-        return mean_corr_coef_pt(z_c, latent_c)
+        # return mean_corr_coef_pt(z_c, latent_c)
 
     def set_mu_sig(self, init=False, n_batches=40):
         if self.empirical_vars or init:
@@ -387,7 +399,7 @@ def generate_artificial_data_10d(n_clusters, n_data_points):
 # function is here rather than in data.py to prevent circular import
 
 
-def generate_artificial_data_domain_adaptation(n_domains, n_data_points, n_dims=10, dim_s=1, dim_c=2):
+def generate_artificial_data_domain_adaptation(n_domains, n_data_points, n_dims=10, dim_s=1, dim_c=2, data_dir=None):
     mu_u = torch.rand(n_domains, dim_s)*10 - 4  # in range (-4, 4)
     sig_u = torch.rand(n_domains, dim_s)*0.99 + 0.01  # in range (-0.01, 1)
     labels = torch.randint(n_domains, size=(n_data_points,))
@@ -400,5 +412,8 @@ def generate_artificial_data_domain_adaptation(n_domains, n_data_points, n_dims=
     random_transf = construct_net_da(
         'glow', n_dims=n_dims, init_identity=False)
     data = random_transf(latent)[0].detach()
+    torch.save(latent, os.path.join(data_dir, 'latent.pt'))
+    torch.save(data, os.path.join(data_dir, 'data.pt'))
+    torch.save(labels, os.path.join(data_dir, 'labels.pt'))
 
     return latent, data, labels

@@ -81,52 +81,275 @@ def da_synthetic_data_reconstruction_plot(model, latent, data, target, epoch):
     latent_sig = torch.stack([latent[target == i].std(
         0, unbiased=False) for i in range(model.n_domains)])
     latent_rms_sig = np.sqrt(np.mean(latent_sig.numpy()**2, 0))
+    # in da_synthetic experiments, we set dim_c=2 and dim_s=2 in default, which is consistent with the experiment in 'Partial Identiﬁability for Domain Adaptation'
+    # in this synthetic experiment, we could tell the estimated C_1 and C_2, so we'll plot all the permutation.
+    # first plot with 4*4 subplots, similar to Figure 3 in 'Partial Identiﬁability for Domain Adaptation'
+    # fig = plt.figure(figsize=(12, 3.5))
+    fig, axs = plt.subplots(4, 4)
+    dim_c_1 = np.flip(np.argsort(rms_sig))[0]
+    estimated_c_1 = z_reconstructed[:, dim_c_1].reshape([-1, 1])
+    dim_c_2 = np.flip(np.argsort(rms_sig))[1]
+    estimated_c_2 = z_reconstructed[:, dim_c_2].reshape([-1, 1])
+    dim_s_1 = np.flip(np.argsort(rms_sig))[2]
+    estimated_s_1 = z_reconstructed[:, dim_s_1].reshape([-1, 1])
+    dim_s_2 = np.flip(np.argsort(rms_sig))[3]
+    estimated_s_2 = z_reconstructed[:, dim_s_2].reshape([-1, 1])
+    estimated_z = torch.cat((estimated_s_1, estimated_s_2, estimated_c_1, estimated_c_2), 1)
+    torch.save(estimated_z, os.path.join(model.save_dir, 'data', 'estimated_z_{}.pt'.format(epoch)))
+    
+    true_s_1 = latent[:, 0:1]
+    true_s_2 = latent[:, 1:2]
+    true_c_1 = latent[:, 2:3]
+    true_c_2 = latent[:, 3:4]
+    # dim_s_length = model.dim_s
+    
+    # top first row
+    # x-axis is True C1, y-axis is Estimated C1
+    axs[0, 0].scatter(true_c_1, estimated_c_1,
+                c=target, s=6, alpha=0.3)
+    # axs[0, 0].set_xlabel('True C1')
+    axs[0, 0].set_ylabel('Estimated C1')
+    axs[0, 0].set_xticks([])
+    axs[0, 0].set_yticks([])
+    # x-axis is True C2, y-axis is Estimated C1
+    axs[0, 1].scatter(true_c_2, estimated_c_1,
+                c=target, s=6, alpha=0.3)
+    axs[0, 1].set_xticks([])
+    axs[0, 1].set_yticks([])
+    # x-axis is True S1, y-axis is Estimated C1
+    axs[0, 2].scatter(true_s_1, estimated_c_1,
+                c=target, s=6, alpha=0.3)
+    axs[0, 2].set_xticks([])
+    # axs[0, 2].set_ylabel('True S1')
+    axs[0, 2].set_yticks([])
+    # x-axis is True S2, y-axis is Estimated C1
+    axs[0, 3].scatter(true_s_2, estimated_c_1,
+                c=target, s=6, alpha=0.3)
+    axs[0, 3].set_xticks([])
+    axs[0, 3].set_yticks([])
+    
+    # top second row
+    # x-axis is True C1, y-axis is Estimated C2
+    axs[1, 0].scatter(true_c_1, estimated_c_2,
+                c=target, s=6, alpha=0.3)
+    axs[1, 0].set_ylabel('Estimated C2')
+    axs[1, 0].set_xticks([])
+    axs[1, 0].set_yticks([])
+    # x-axis is True C2, y-axis is Estimated C2
+    axs[1, 1].scatter(true_c_2, estimated_c_2,
+                c=target, s=6, alpha=0.3)
+    axs[1, 1].set_xticks([])
+    axs[1, 1].set_yticks([])
+    # x-axis is True S1, y-axis is Estimated C2
+    axs[1, 2].scatter(true_s_1, estimated_c_2,
+                c=target, s=6, alpha=0.3)
+    axs[1, 2].set_xticks([])
+    axs[1, 2].set_yticks([])
+    # x-axis is True S2, y-axis is Estimated C2
+    axs[1, 3].scatter(true_s_2, estimated_c_2,
+                c=target, s=6, alpha=0.3)
+    axs[1, 3].set_xticks([])
+    axs[1, 3].set_yticks([])
+    
+    # top third row
+    # x-axis is True C1, y-axis is Estimated S1
+    axs[2, 0].scatter(true_c_1, estimated_s_1,
+                c=target, s=6, alpha=0.3)
+    axs[2, 0].set_ylabel('Estimated S1')
+    axs[2, 0].set_xticks([])
+    axs[2, 0].set_yticks([])
+    # x-axis is True C2, y-axis is Estimated S1
+    axs[2, 1].scatter(true_c_2, estimated_s_1,
+                c=target, s=6, alpha=0.3)
+    axs[2, 1].set_xticks([])
+    axs[2, 1].set_yticks([])
+    # x-axis is True S1, y-axis is Estimated S1
+    axs[2, 2].scatter(true_s_1, estimated_s_1,
+                c=target, s=6, alpha=0.3)
+    axs[2, 2].set_xticks([])
+    axs[2, 2].set_yticks([])
+    # x-axis is True S2, y-axis is Estimated S1
+    axs[2, 3].scatter(true_s_2, estimated_s_1,
+                c=target, s=6, alpha=0.3)
+    axs[2, 3].set_xticks([])
+    axs[2, 3].set_yticks([])
+    
+    # bottom row
+    # x-axis is True C1, y-axis is Estimated S2
+    axs[3, 0].scatter(true_c_1, estimated_s_2,
+                c=target, s=6, alpha=0.3)
+    axs[3, 0].set_ylabel('Estimated S2')
+    axs[3, 0].set_xlabel('True C1')
+    axs[3, 0].set_xticks([])
+    axs[3, 0].set_yticks([])
+    # x-axis is True C2, y-axis is Estimated S2
+    axs[3, 1].scatter(true_c_2, estimated_s_2,
+                c=target, s=6, alpha=0.3)
+    axs[3, 1].set_xlabel('True C2')
+    axs[3, 1].set_xticks([])
+    axs[3, 1].set_yticks([])
+    # x-axis is True S1, y-axis is Estimated S2
+    axs[3, 2].scatter(true_s_1, estimated_s_2,
+                c=target, s=6, alpha=0.3)
+    axs[3, 2].set_xlabel('True S1')
+    axs[3, 2].set_xticks([])
+    axs[3, 2].set_yticks([])
+    # x-axis is True S2, y-axis is Estimated S2
+    axs[3, 3].scatter(true_s_2, estimated_s_2,
+                c=target, s=6, alpha=0.3)
+    axs[3, 3].set_xlabel('True S2')
+    axs[3, 3].set_xticks([])
+    axs[3, 3].set_yticks([])
+    
+    plt.close()
+    fig.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_0.png'.format(epoch)))
+    
+    
+    # second plot, we'll plot true plot.
+    fig = plt.figure(figsize=(12, 3.5))
 
-    for dim_order in range(2):
-        for dim1_factor in [1, -1]:
-            for dim2_factor in [1, -1]:
-                fig = plt.figure(figsize=(12, 3.5))
+    plt.subplot(1, 4, 1)
+    plt.scatter(true_s_1, true_c_1,
+                c=target, s=6, alpha=0.3)
+    
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_1')
+    plt.xlabel('S_1')
+    # plt.title('C1-S1', fontsize=16, family='serif')
 
-                plt.subplot(1, 4, 1)
-                plt.scatter(latent[:, 0], latent[:, model.dim_c],
-                            c=target, s=6, alpha=0.3)
-                plt.xticks([])
-                plt.yticks([])
-                plt.title('GROUND TRUTH', fontsize=16, family='serif')
+    plt.subplot(1, 4, 2)
+    # plt.scatter(data[:, 0], data[:, 1], c=target, s=6, alpha=0.3)
+    plt.scatter(true_s_2, true_c_1, c=target, s=6, alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_1')
+    plt.xlabel('S_2')
+    # plt.title('C1-S2', fontsize=16, family='serif')
 
-                plt.subplot(1, 4, 2)
-                plt.scatter(data[:, 0], data[:, 1], c=target, s=6, alpha=0.3)
-                plt.xticks([])
-                plt.yticks([])
-                plt.title('OBSERVED DATA\n(PROJECTION)',
-                          fontsize=16, family='serif')
+    plt.subplot(1, 4, 3)
+    plt.scatter(true_s_1, true_c_2, c=target, s=6, alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_2')
+    plt.xlabel('S_1')
 
-                plt.subplot(1, 4, 3)
-                dim1 = np.flip(np.argsort(rms_sig))[dim_order]
-                dim2 = np.flip(np.argsort(rms_sig))[(1+dim_order) % 2]
-                dim_c_start = 0
-                dim_s_start = np.flip(np.argsort(rms_sig))[model.dim_c]
-                plt.scatter(
-                    dim1_factor*z_reconstructed[:, dim_s_start], dim2_factor*z_reconstructed[:, dim_c_start], c=target, s=6, alpha=0.3)
-                plt.xticks([])
-                plt.yticks([])
-                plt.title('RECONSTRUCTION', fontsize=16, family='serif')
+    plt.subplot(1, 4, 4)
+    plt.scatter(true_s_2, true_c_2, c=target, s=6, alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_2')
+    plt.xlabel('S_2')
 
-                plt.subplot(1, 4, 4)
-                plt.semilogy(np.flip(np.sort(rms_sig)), '-ok')
-                ground_truth = np.flip(np.sort(latent_rms_sig))
-                ground_truth = latent_rms_sig
-                plt.semilogy(scale_ground_truth(
-                    ground_truth, rms_sig), '-ok', alpha=0.3)
-                plt.xticks([])
-                plt.yticks([])
-                plt.title('SPECTRUM', fontsize=16, family='serif')
+    plt.tight_layout()
+    # fig_idx = 4*dim_order + 2 * \
+    #     max(dim1_factor, 0) + max(dim2_factor, 0)
+    plt.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_1.png'.format(epoch)))
+    plt.close()
+    
+    # third figure
+    fig = plt.figure(figsize=(12, 3.5))
 
-                plt.tight_layout()
-                fig_idx = 4*dim_order + 2 * \
-                    max(dim1_factor, 0) + max(dim2_factor, 0)
-                plt.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_{}.png'.format(epoch, fig_idx)))
-                plt.close()
+    plt.subplot(1, 4, 1)
+    plt.scatter(estimated_s_1, estimated_c_1,
+                c=target, s=6, alpha=0.3)
+    
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_1')
+    plt.xlabel('S_1')
+    # plt.title('C1-S1', fontsize=16, family='serif')
+
+    plt.subplot(1, 4, 2)
+    # plt.scatter(data[:, 0], data[:, 1], c=target, s=6, alpha=0.3)
+    plt.scatter(estimated_s_2, estimated_c_1, c=target, s=6, alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_1')
+    plt.xlabel('S_2')
+    # plt.title('C1-S2', fontsize=16, family='serif')
+
+    plt.subplot(1, 4, 3)
+    plt.scatter(estimated_s_1, estimated_c_2, c=target, s=6, alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_2')
+    plt.xlabel('S_1')
+
+    plt.subplot(1, 4, 4)
+    plt.scatter(estimated_s_2, estimated_c_2, c=target, s=6, alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.ylabel('C_2')
+    plt.xlabel('S_2')
+
+    plt.tight_layout()
+    # fig_idx = 4*dim_order + 2 * \
+    #     max(dim1_factor, 0) + max(dim2_factor, 0)
+    plt.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_2.png'.format(epoch)))
+    plt.close()
+    
+    # fourth figure
+    # plt.subplot(1, 4, 4)
+    plt.semilogy(np.flip(np.sort(rms_sig)), '-ok')
+    ground_truth = np.flip(np.sort(latent_rms_sig))
+    ground_truth = latent_rms_sig
+    plt.semilogy(scale_ground_truth(
+        ground_truth, rms_sig), '-ok', alpha=0.3)
+    plt.xticks([])
+    plt.yticks([])
+    plt.title('SPECTRUM', fontsize=16, family='serif')
+    plt.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_3.png'.format(epoch)))
+    plt.close()
+    
+    
+    # for dim_order in range(2):
+    #     for dim1_factor in [1, -1]:
+    #         for dim2_factor in [1, -1]:
+    #             fig = plt.figure(figsize=(12, 3.5))
+
+    #             plt.subplot(1, 4, 1)
+    #             plt.scatter(latent[:, 0], latent[:, model.dim_s],
+    #                         c=target, s=6, alpha=0.3)
+                
+    #             plt.xticks([])
+    #             plt.yticks([])
+    #             plt.title('GROUND TRUTH', fontsize=16, family='serif')
+
+    #             plt.subplot(1, 4, 2)
+    #             # plt.scatter(data[:, 0], data[:, 1], c=target, s=6, alpha=0.3)
+    #             plt.scatter(data[:, 0], data[:, model.dim_s], c=target, s=6, alpha=0.3)
+    #             plt.xticks([])
+    #             plt.yticks([])
+    #             plt.title('OBSERVED DATA\n(PROJECTION)',
+    #                       fontsize=16, family='serif')
+
+    #             plt.subplot(1, 4, 3)
+    #             dim1 = np.flip(np.argsort(rms_sig))[dim_order]
+    #             dim2 = np.flip(np.argsort(rms_sig))[(1+dim_order) % 2]
+    #             dim_c_start = np.flip(np.argsort(rms_sig))[0]
+    #             dim_s_start = np.flip(np.argsort(rms_sig))[model.dim_c]
+    #             plt.scatter(
+    #                 dim1_factor*z_reconstructed[:, dim_s_start], dim2_factor*z_reconstructed[:, dim_c_start], c=target, s=6, alpha=0.3)
+    #             plt.xticks([])
+    #             plt.yticks([])
+    #             plt.title('RECONSTRUCTION', fontsize=16, family='serif')
+
+    #             plt.subplot(1, 4, 4)
+    #             plt.semilogy(np.flip(np.sort(rms_sig)), '-ok')
+    #             ground_truth = np.flip(np.sort(latent_rms_sig))
+    #             ground_truth = latent_rms_sig
+    #             plt.semilogy(scale_ground_truth(
+    #                 ground_truth, rms_sig), '-ok', alpha=0.3)
+    #             plt.xticks([])
+    #             plt.yticks([])
+    #             plt.title('SPECTRUM', fontsize=16, family='serif')
+
+    #             plt.tight_layout()
+    #             fig_idx = 4*dim_order + 2 * \
+    #                 max(dim1_factor, 0) + max(dim2_factor, 0)
+    #             plt.savefig(os.path.join(model.save_dir, 'figures', 'reconstruction_{}_{}.png'.format(epoch, fig_idx)))
+    #             plt.close()
 
 
 def scale_ground_truth(y, x):

@@ -31,6 +31,8 @@ parser.add_argument('--dim_c', type=int, default=1,
                     help='the number of dimension for suprious causal variables')
 parser.add_argument('--dataset', type=str, default='synthetic',
                     help='choose dataset: synthetic')
+parser.add_argument('--load_existing_dataset', type=str, default=None,
+                    help='filepath for exisitng dataset')
 parser.add_argument('--save_frequency', type=int, default=80,
                     help='')
 parser.add_argument('--mcc_frequency', type=int, default=10,
